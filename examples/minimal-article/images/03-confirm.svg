@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-label="Abstract confirmation checkpoint">
+  <rect width="1200" height="675" fill="#F0FDF4"/>
+  <path d="M600 92 888 198v174c0 122-92 188-288 232-196-44-288-110-288-232V198L600 92Z" fill="#FFFFFF" stroke="#065F46" stroke-width="10" stroke-linejoin="round"/>
+  <path d="m454 344 96 96 202-210" fill="none" stroke="#059669" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="210" cy="180" r="52" fill="#A7F3D0" opacity="0.78"/>
+  <circle cx="1000" cy="500" r="78" fill="#A7F3D0" opacity="0.5"/>
+  <path d="M156 526h188M856 152h188" stroke="#059669" stroke-width="16" stroke-linecap="round" opacity="0.4"/>
+</svg>

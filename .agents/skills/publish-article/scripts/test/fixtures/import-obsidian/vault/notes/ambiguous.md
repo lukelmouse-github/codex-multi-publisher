@@ -1,0 +1,3 @@
+# Ambiguous
+
+![[duplicate.png]]

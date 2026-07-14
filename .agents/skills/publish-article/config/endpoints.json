@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "defaultTargets": ["blog", "wechat"],
+  "endpoints": {
+    "blog": {
+      "driver": "blog-git",
+      "branch": "main",
+      "remote": "origin",
+      "contentRoot": "content/posts"
+    },
+    "wechat": {
+      "driver": "wechat-draft-baoyu",
+      "account": "example-account",
+      "mode": "draft"
+    }
+  }
+}

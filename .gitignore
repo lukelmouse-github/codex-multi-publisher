@@ -1,0 +1,19 @@
+# Local publication state and previews
+/.publish/
+/.superpowers/
+
+# Credentials
+/.baoyu-skills/.env
+/.env
+/.env.*
+!/.env.example
+
+# Tool and build output
+node_modules/
+/public/
+/resources/_gen/
+*.log
+
+# Operating-system files
+.DS_Store
+Thumbs.db

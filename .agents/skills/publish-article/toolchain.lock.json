@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "baoyuPostToWechat": {
+    "repository": "https://github.com/JimLiu/baoyu-skills",
+    "version": "1.56.1",
+    "files": {
+      "SKILL.md": "sha256:32e7c275c357e4a456481a9caa3192700b14683687542a4529293f0abc961d4b",
+      "scripts/wechat-api.ts": "sha256:cb355f487d4e9e53d7c7b3fea79415d1a617c1cb221a18cf1915ddd3f92a6a77",
+      "scripts/wechat-extend-config.ts": "sha256:116a066137f613f85b5ccee5a966593ff811aee3c9451033fdfe48f642df47e0",
+      "scripts/md-to-wechat.ts": "sha256:b31e0ec99187926df2f751253c79b1edfecc237920b22601ca1e32dd67f5b346"
+    }
+  },
+  "gzhDesignSkill": {
+    "repository": "https://github.com/isjiamu/gzh-design-skill",
+    "revision": "ba1f4175519b481cb3566616c9e5178705067904",
+    "license": "AGPL-3.0-or-later",
+    "runnerContract": "gzh-design-sidecar/v1",
+    "files": {
+      "LICENSE": "sha256:50a026dd82963794599f540477cd913345a42eb1028c53c1b53f772abec4c191",
+      "SKILL.md": "sha256:c6f77f9ee5d351ef519b4e4c5238614a77427ff7bb442d251bbff29347af3580",
+      "references/common-components.md": "sha256:6daf8125af6d11ad955df4090f58f6f0c2518b8d745c28093429ab1b8d5b322c",
+      "references/theme-index.md": "sha256:b865d0abd50c346d11b643f749ef2b4292d907913a6c7ad899b74c59e2e2c0e8",
+      "scripts/validate_gzh_html.py": "sha256:de21aa3decac10c6ef89040bdc4e19930dbed33d6ccf7bc963b744c53da01185"
+    },
+    "themes": {
+      "moyu-green": {
+        "path": "references/theme-moyu-green.md",
+        "sha256": "sha256:88c3661d8b42d83126793ee693b20e1946d38a23da568accedd8a4aea83186f8"
+      }
+    }
+  }
+}

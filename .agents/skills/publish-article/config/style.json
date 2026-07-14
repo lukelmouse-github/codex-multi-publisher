@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "selectionMode": "per-run",
+  "defaultProfile": "moyu-green",
+  "profiles": {
+    "moyu-green": {
+      "description": "轻松、清晰、克制的绿色编辑视觉，适合技术教程、工具盘点和实践复盘。",
+      "palette": {
+        "primary": "#059669",
+        "primaryDark": "#065F46",
+        "primaryLight": "#A7F3D0",
+        "background": "#F0FDF4",
+        "ink": "#1F2937",
+        "muted": "#64748B"
+      },
+      "illustration": {
+        "coverCount": 1,
+        "inlineMin": 2,
+        "inlineMax": 4,
+        "direction": "editorial infographic, relaxed hand-drawn accents, high information clarity, generous whitespace",
+        "avoid": ["neon cyberpunk", "heavy gradients", "generic corporate stock art", "dense tiny text"]
+      },
+      "wechatTheme": {
+        "provider": "gzh-design-skill",
+        "themeId": "moyu-green"
+      }
+    }
+  }
+}

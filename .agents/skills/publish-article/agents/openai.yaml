@@ -1,0 +1,4 @@
+interface:
+  display_name: "Publish Article"
+  short_description: "改造本地文章并同步到 Hugo 博客和微信公众号草稿箱"
+  default_prompt: "Use $publish-article to prepare this local Markdown article for the blog and WeChat draft."
