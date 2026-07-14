@@ -12,8 +12,18 @@ export interface HugoValidationResult {
   warnings: string[];
 }
 
-async function run(command: string, args: string[], cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn([command, ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+async function run(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: Record<string, string | undefined> = {},
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const child = Bun.spawn([command, ...args], {
+    cwd,
+    env: { ...process.env, ...env },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -57,7 +67,10 @@ export async function validateHugoCandidate(
   const versionMatches = actualVersion.includes(`v${expectedVersion}`);
   const warnings = versionMatches ? [] : [`Local Hugo differs from Vercel pin ${expectedVersion}: ${actualVersion}`];
 
-  const destination = await mkdtemp(path.join(tmpdir(), "publish-article-hugo-"));
+  const [destination, resourceDir] = await Promise.all([
+    mkdtemp(path.join(tmpdir(), "publish-article-hugo-")),
+    mkdtemp(path.join(tmpdir(), "publish-article-hugo-resources-")),
+  ]);
   try {
     const result = await run(
       "hugo",
@@ -69,6 +82,7 @@ export async function validateHugoCandidate(
         "--noBuildLock",
       ],
       repoRoot,
+      { HUGO_RESOURCEDIR: resourceDir },
     );
     if (result.exitCode !== 0) {
       throw new PublishError("E_HUGO_BUILD", result.stderr || result.stdout || "Hugo build failed");
@@ -81,7 +95,10 @@ export async function validateHugoCandidate(
     }
     return { ok: true, expectedVersion, actualVersion, versionMatches, outputPath, warnings };
   } finally {
-    await rm(destination, { recursive: true, force: true });
+    await Promise.all([
+      rm(destination, { recursive: true, force: true }),
+      rm(resourceDir, { recursive: true, force: true }),
+    ]);
   }
 }
 

@@ -132,7 +132,7 @@ describe("renderHugoBundle", () => {
     await writeFile(path.join(repoRoot, "hugo.toml"), 'baseURL = "https://example.invalid/"\n');
     await writeFile(
       path.join(repoRoot, "layouts", "_default", "single.html"),
-      "<!doctype html><html><body><h1>{{ .Title }}</h1>{{ .Content }}</body></html>\n",
+      "<!doctype html><html><body><h1>{{ .Title }}</h1>{{ with .Resources.GetMatch \"assets/*\" }}{{ $image := .Resize \"1x1\" }}<img src=\"{{ $image.RelPermalink }}\">{{ end }}{{ .Content }}</body></html>\n",
     );
     const packageRoot = path.join(root, "package");
     await mkdir(path.join(packageRoot, "assets"), { recursive: true });
@@ -148,6 +148,7 @@ describe("renderHugoBundle", () => {
     expect(validation.ok).toBe(true);
     expect(validation.expectedVersion).toBe("0.163.1");
     expect(await stat(path.join(repoRoot, ".hugo_build.lock")).catch(() => undefined)).toBeUndefined();
+    expect(await stat(path.join(repoRoot, "resources")).catch(() => undefined)).toBeUndefined();
   });
 
   test("keeps local absolute paths out of the review diff headers", async () => {
