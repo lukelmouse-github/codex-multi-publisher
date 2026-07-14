@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { executeCli } from "../src/cli";
 import { sha256Bytes } from "../src/canonical-json";
 import type { ArticlePackage } from "../src/types";
+import { WECHAT_CODE_SLOT_PREFIX } from "../src/wechat-code";
 
 const roots: string[] = [];
 
@@ -70,6 +71,7 @@ async function initializeLocalBlog(setup: Awaited<ReturnType<typeof fixture>>): 
   await git(setup.repo, ["config", "user.email", "publish-cli@example.test"]);
   await git(setup.repo, ["config", "core.hooksPath", ".git/hooks"]);
   await mkdir(path.join(setup.repo, "layouts", "_default"), { recursive: true });
+  await mkdir(path.join(setup.repo, "static", "css"), { recursive: true });
   await writeFile(path.join(setup.repo, "hugo.toml"), [
     'baseURL = "https://example.test/"',
     'languageCode = "zh-cn"',
@@ -81,10 +83,21 @@ async function initializeLocalBlog(setup: Awaited<ReturnType<typeof fixture>>): 
   }));
   await writeFile(
     path.join(setup.repo, "layouts", "_default", "single.html"),
-    "<!doctype html><html><head><title>{{ .Title }}</title></head><body>{{ .Content }}</body></html>\n",
+    '<!doctype html><html><head><title>{{ .Title }}</title><link rel="stylesheet" href="/css/main.css"></head><body><div class="post-content md-content">{{ .Content }}</div></body></html>\n',
+  );
+  await writeFile(
+    path.join(setup.repo, "static", "css", "main.css"),
+    ".md-content .highlight{}\n.md-content pre code{}\n.chroma{}\n",
   );
   await writeFile(path.join(setup.repo, "README.md"), "seed blog\n");
-  await git(setup.repo, ["add", "README.md", "hugo.toml", "vercel.json", "layouts/_default/single.html"]);
+  await git(setup.repo, [
+    "add",
+    "README.md",
+    "hugo.toml",
+    "vercel.json",
+    "layouts/_default/single.html",
+    "static/css/main.css",
+  ]);
   await git(setup.repo, ["commit", "-m", "seed blog"]);
   await git(setup.repo, ["remote", "add", "origin", remote]);
   await git(setup.repo, ["push", "-u", "origin", "main"]);
@@ -134,7 +147,71 @@ describe("publish-article CLI", () => {
 
   test("returns help and rejects unknown commands", async () => {
     expect((await executeCli(["--help"])).help).toContain("only creates a private draft");
+    expect((await executeCli(["--help"])).help).toContain("validate-wechat");
     await expect(executeCli(["freepublish"])).rejects.toThrow("Unknown command");
+  });
+
+  test("renders explicit WeChat code slots and validates fidelity without a remote side effect", async () => {
+    const setup = await fixture();
+    const imported = await executeCli(["import", "--source", setup.source, "--repo", setup.repo]);
+    const workingRun = imported.runRoot as string;
+    await writeFile(path.join(workingRun, "draft", "body.md"), [
+      "# CLI article",
+      "",
+      "```json",
+      "{",
+      '\t\"nested\": \"<safe>\"',
+      "}",
+      "```",
+      "",
+    ].join("\n"));
+    const packaged = await executeCli(["package", "--run", workingRun, "--repo", setup.repo]);
+    const candidate = path.join(workingRun, "working", "candidate.html");
+    const output = path.join(workingRun, "working", "code-rendered.html");
+    await mkdir(path.dirname(candidate), { recursive: true });
+    await writeFile(
+      candidate,
+      `<section><p><span leaf="">正文。</span></p><!--${WECHAT_CODE_SLOT_PREFIX}0--></section>`,
+    );
+
+    const rendered = await executeCli([
+      "render-wechat-code",
+      "--run",
+      workingRun,
+      "--html",
+      candidate,
+      "--output",
+      output,
+      "--repo",
+      setup.repo,
+    ]);
+    expect(rendered.mode).toBe("slots");
+    expect((rendered.fidelity as { ok: boolean }).ok).toBe(true);
+    expect(await readFile(output, "utf8")).toContain("&nbsp;&nbsp;&nbsp;&nbsp;");
+
+    const validated = await executeCli([
+      "validate-wechat",
+      "--run",
+      packaged.runRoot as string,
+      "--html",
+      output,
+      "--repo",
+      setup.repo,
+    ]);
+    expect((validated.fidelity as { ok: boolean }).ok).toBe(true);
+    expect(validated.htmlSha256).toBe(rendered.htmlSha256);
+
+    const broken = path.join(workingRun, "working", "broken.html");
+    await writeFile(broken, (await readFile(output, "utf8")).replace("&nbsp;&nbsp;&nbsp;&nbsp;", ""));
+    await expect(executeCli([
+      "validate-wechat",
+      "--run",
+      workingRun,
+      "--html",
+      broken,
+      "--repo",
+      setup.repo,
+    ])).rejects.toMatchObject({ data: { code: "E_WECHAT_CODE_FIDELITY" } });
   });
 
   test("publishes a Blog end to end to a local bare remote and reports its status", async () => {

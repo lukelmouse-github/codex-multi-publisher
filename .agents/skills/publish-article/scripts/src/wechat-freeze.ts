@@ -6,6 +6,14 @@ import { PublishError } from "./errors";
 import { assertRealPathWithin, assertSafeRelative, isWithin } from "./path-policy";
 import type { ArticleAsset, ArticlePackage, AssetRole } from "./types";
 import {
+  assertWechatCodeFidelity,
+  digestWechatCodeProjection,
+  inspectRenderedWechatCodeBlocks,
+  readArticlePackageBody,
+  WECHAT_CODE_TAB_SIZE,
+  WECHAT_CODE_THEME,
+} from "./wechat-code";
+import {
   buildWechatPreview,
   extractWechatPreviewPayload,
   inspectWechatHtml,
@@ -75,6 +83,16 @@ export interface WechatRenderManifest {
   preview: {
     path: "preview.html";
     sourceHtmlSha256: string;
+  };
+  codeFidelity: {
+    schemaVersion: 1;
+    renderer: "wechat-code-inline/v1";
+    theme: string;
+    tabSize: number;
+    blockCount: number;
+    sourceBodySha256: string;
+    sourceProjectionSha256: string;
+    renderedProjectionSha256: string;
   };
   assets: WechatRenderAsset[];
   cover?: {
@@ -254,6 +272,8 @@ export async function freezeWechatCandidate(options: FreezeWechatCandidateOption
 
   const packageRoot = await assertRealPathWithin(options.packageRoot, options.packageRoot, "ArticlePackage root");
   const candidateHtml = await readCandidateHtml(options);
+  const articleBody = await readArticlePackageBody(options.article, packageRoot);
+  const codeFidelityReport = assertWechatCodeFidelity(articleBody, candidateHtml, WECHAT_CODE_TAB_SIZE);
   const inspection = inspectWechatHtml(candidateHtml, "candidate");
   const maps = articleAssetMaps(options.article);
   const cover = chooseCover(options.article, maps);
@@ -334,6 +354,16 @@ export async function freezeWechatCandidate(options: FreezeWechatCandidateOption
       },
       html: { path: "wechat.html" as const, sha256: htmlSha256, bytes: htmlBytes.byteLength },
       preview: { path: "preview.html" as const, sourceHtmlSha256: htmlSha256 },
+      codeFidelity: {
+        schemaVersion: 1 as const,
+        renderer: "wechat-code-inline/v1" as const,
+        theme: WECHAT_CODE_THEME,
+        tabSize: codeFidelityReport.tabSize,
+        blockCount: codeFidelityReport.sourceBlockCount,
+        sourceBodySha256: options.article.body.sha256,
+        sourceProjectionSha256: codeFidelityReport.sourceProjectionSha256,
+        renderedProjectionSha256: codeFidelityReport.renderedProjectionSha256,
+      },
       assets: manifestAssets,
       cover: coverImage
         ? { assetId: cover!.id, path: coverImage.path, sha256: coverImage.sha256 }
@@ -391,10 +421,19 @@ export async function freezeWechatCandidate(options: FreezeWechatCandidateOption
 function parseManifest(value: unknown): WechatRenderManifest {
   if (!value || typeof value !== "object") throw freezeError("E_WECHAT_MANIFEST", "Render manifest is invalid");
   const manifest = value as WechatRenderManifest;
-  if (manifest.schemaVersion !== 1 || !manifest.html || !Array.isArray(manifest.assets)) {
+  if (
+    manifest.schemaVersion !== 1
+    || !manifest.html
+    || !Array.isArray(manifest.assets)
+    || manifest.codeFidelity?.schemaVersion !== 1
+    || manifest.codeFidelity.renderer !== "wechat-code-inline/v1"
+  ) {
     throw freezeError("E_WECHAT_MANIFEST", "Render manifest schema is invalid");
   }
   assertDigest(manifest.renderDigest, "render digest");
+  assertDigest(manifest.codeFidelity.sourceBodySha256, "source body digest");
+  assertDigest(manifest.codeFidelity.sourceProjectionSha256, "source code projection digest");
+  assertDigest(manifest.codeFidelity.renderedProjectionSha256, "rendered code projection digest");
   return manifest;
 }
 
@@ -460,6 +499,24 @@ export async function verifyFrozenWechatCandidate(frozenRoot: string): Promise<F
     throw freezeError("E_WECHAT_HTML_DIGEST", "Frozen WeChat HTML bytes changed after confirmation");
   }
   const html = htmlBytes.toString("utf8");
+  const renderedCode = inspectRenderedWechatCodeBlocks(html);
+  const renderedProjectionSha256 = digestWechatCodeProjection(renderedCode.blocks);
+  if (
+    renderedCode.unmarkedCodeCount > 0
+    || renderedCode.blocks.length !== manifest.codeFidelity.blockCount
+    || renderedProjectionSha256 !== manifest.codeFidelity.renderedProjectionSha256
+    || manifest.codeFidelity.sourceProjectionSha256 !== manifest.codeFidelity.renderedProjectionSha256
+    || manifest.codeFidelity.tabSize !== WECHAT_CODE_TAB_SIZE
+    || manifest.codeFidelity.theme !== WECHAT_CODE_THEME
+  ) {
+    throw freezeError("E_WECHAT_CODE_FIDELITY", "Frozen WeChat code projection does not match its manifest", {
+      unmarkedCodeCount: renderedCode.unmarkedCodeCount,
+      expectedBlockCount: manifest.codeFidelity.blockCount,
+      actualBlockCount: renderedCode.blocks.length,
+      expectedProjectionSha256: manifest.codeFidelity.renderedProjectionSha256,
+      actualProjectionSha256: renderedProjectionSha256,
+    });
+  }
   const references = await validateFrozenWechatImageFiles(html, root);
 
   const manifestPaths = new Map<string, WechatRenderAsset>();

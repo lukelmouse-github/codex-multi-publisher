@@ -114,7 +114,20 @@ Do not touch the live `<contentRoot>/<slug>/` bundle during prepare.
 
 Resolve the external `gzh-design-skill` Git checkout from `--gzh-dir`, `GZH_DESIGN_SKILL_DIR`, or the ignored `.publish/toolchains/gzh-design-skill` location. Verify its locked origin, commit, license, and selected theme files. Read its instructions and the theme named by the selected profile. Do not copy its theme library into this repository.
 
-Generate the candidate HTML once from the frozen ArticlePackage. Save it inside `<runRoot>/working/` and validate it with the upstream validator.
+Generate the candidate HTML once from the frozen ArticlePackage. Save it inside `<runRoot>/working/`. Do not hand-render fenced code. In Markdown fence order, put exactly one explicit placeholder where each code card belongs:
+
+```html
+<!--PUBLISH_ARTICLE_CODE_SLOT:0-->
+```
+
+Use contiguous zero-based indices with no duplicate, missing, or extra slots. Then let the project-owned serializer replace those slots from `package/body.md`:
+
+```text
+$CLI render-wechat-code --run <runRoot> --html <candidate-with-slots.html> --output <candidate.html>
+$CLI validate-wechat --run <runRoot> --html <candidate.html>
+```
+
+The renderer expands tabs at four-column stops, preserves logical and blank lines, converts visible ASCII spaces to `&nbsp;`, and emits Shiki token colors as inline HEX styles. `validate-wechat` compares code block count, order, declared language, line count, blank lines, indentation, and content against the ArticlePackage. Any mismatch is `E_WECHAT_CODE_FIDELITY`. Use `render-wechat-code --legacy-detect` only once when migrating an older two-part GZH code card that has no slots; the legacy component is immediately discarded and rebuilt from Markdown.
 
 Run:
 
@@ -124,6 +137,7 @@ $CLI freeze-wechat --run <runRoot> --html <candidate.html> --style <profile>
 
 Require:
 
+- every Markdown fenced block deterministically rendered from an explicit slot, with a passing fidelity report;
 - WeChat payload HTML frozen without later reformatting;
 - local images converted to valid JPG/PNG derivatives;
 - no absolute path, `..`, WebP, unresolved `asset://`, script, or external stylesheet in the payload;

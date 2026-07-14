@@ -297,17 +297,38 @@ bun "$CLI" render-blog --run "$RUN_ROOT"
 
 This writes only to the ignored run directory. It does not replace the live Blog bundle.
 
-### 5. Produce the WeChat candidate HTML
+### 5. Produce the WeChat theme layout
 
 Ask the agent to follow `SKILL.md`, the selected style profile, and the locked `gzh-design-skill` theme. Save the generated candidate under the run's `working/` directory, for example:
 
 ```text
-<runRoot>/working/wechat-candidate.html
+<runRoot>/working/wechat-layout.html
 ```
 
-This is intentionally an agent-guided creative step; there is no CLI subcommand that invents the layout.
+The theme shell is an agent-guided creative step, but fenced code is not. Put one ordered placeholder at each Markdown code-block position instead of generating code lines:
 
-### 6. Validate and freeze the WeChat candidate
+```html
+<!--PUBLISH_ARTICLE_CODE_SLOT:0-->
+```
+
+Use contiguous zero-based indices and no extra slots.
+
+### 6. Render code, validate, and freeze the WeChat candidate
+
+The project-owned renderer reads the frozen `package/body.md`, replaces every slot with Shiki-tokenized inline HTML, and performs an exact code-fidelity check:
+
+```bash
+bun "$CLI" render-wechat-code \
+  --run "$RUN_ROOT" \
+  --html "$RUN_ROOT/working/wechat-layout.html" \
+  --output "$RUN_ROOT/working/wechat-candidate.html"
+
+bun "$CLI" validate-wechat \
+  --run "$RUN_ROOT" \
+  --html "$RUN_ROOT/working/wechat-candidate.html"
+```
+
+Tabs, blank lines, indentation, language labels, order, and line contents are bound to the ArticlePackage. A mismatch fails with `E_WECHAT_CODE_FIDELITY`. Use `--legacy-detect` only when migrating an older two-part GZH code card; normal runs must use explicit slots.
 
 ```bash
 bun "$CLI" freeze-wechat \

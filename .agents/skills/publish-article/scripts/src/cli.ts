@@ -51,7 +51,13 @@ import type {
   ImportedAsset,
   PreparedPublication,
 } from "./types";
+import {
+  assertWechatCodeFidelity,
+  readArticlePackageBody,
+  renderWechatCode,
+} from "./wechat-code";
 import { freezeWechatCandidate, verifyFrozenWechatCandidate } from "./wechat-freeze";
+import { inspectWechatHtml } from "./wechat-html";
 
 export const CLI_HELP = `publish-article
 
@@ -59,6 +65,8 @@ Commands:
   import --source <article.md> [--vault-root <dir>] [--repo <blog>]
   package --run <working-run> [--repo <blog>]
   render-blog --run <run> [--repo <blog>]
+  render-wechat-code --run <run> --html <candidate.html> [--output <rendered.html>] [--legacy-detect]
+  validate-wechat --run <run> --html <candidate.html> [--repo <blog>]
   freeze-wechat --run <run> --html <candidate.html> [--style <profile>] [--gzh-dir <dir>]
   prepare --run <run> [--targets blog,wechat] [--repo <blog>]
   publish --run <run> --confirm <token> [--repo <blog>]
@@ -197,6 +205,13 @@ function stringOption(parsed: ParsedArguments, name: string, required = false): 
   if (value === true) throw new PublishError("E_ARGUMENT", `--${name} requires a value`);
   if (required && !value) throw new PublishError("E_ARGUMENT", `Missing required option --${name}`);
   return value;
+}
+
+function flagOption(parsed: ParsedArguments, name: string): boolean {
+  const value = parsed.options.get(name);
+  if (value === undefined) return false;
+  if (value !== true) throw new PublishError("E_ARGUMENT", `--${name} does not accept a value`);
+  return true;
 }
 
 function rejectUnknownOptions(parsed: ParsedArguments, allowed: string[]): void {
@@ -550,6 +565,68 @@ async function commandRenderBlog(parsed: ParsedArguments): Promise<Record<string
   const recordPath = path.join(loaded.packageRunRoot, "renders", "blog-result.json");
   await writeJson(recordPath, record);
   return { contractVersion: 1, command: "render-blog", runRoot: loaded.packageRunRoot, recordPath, ...record };
+}
+
+async function commandRenderWechatCode(parsed: ParsedArguments): Promise<Record<string, unknown>> {
+  rejectUnknownOptions(parsed, ["run", "html", "output", "legacy-detect", "repo"]);
+  const repoRoot = await repoRootFor(parsed);
+  const loaded = await loadPackage(repoRoot, stringOption(parsed, "run", true)!);
+  const inputPath = resolveLocalInput(stringOption(parsed, "html", true)!);
+  const outputPath = resolveLocalInput(
+    stringOption(parsed, "output")
+      ?? path.join(loaded.requestedRunRoot, "working", "wechat-code-rendered.html"),
+  );
+  await assertPathWithinNoSymlinks(loaded.requestedRunRoot, outputPath, "WeChat rendered candidate");
+  await ensureDirectoryWithin(
+    loaded.requestedRunRoot,
+    path.dirname(outputPath),
+    "WeChat rendered candidate directory",
+  );
+  const [body, candidateHtml] = await Promise.all([
+    readArticlePackageBody(loaded.article, loaded.packageRoot),
+    readFile(inputPath, "utf8"),
+  ]);
+  inspectWechatHtml(candidateHtml, "candidate");
+  const rendered = await renderWechatCode({
+    markdown: body,
+    candidateHtml,
+    allowLegacyDetection: flagOption(parsed, "legacy-detect"),
+  });
+  inspectWechatHtml(rendered.html, "candidate");
+  await atomicWriteFile(outputPath, rendered.html);
+  return {
+    contractVersion: 1,
+    command: "render-wechat-code",
+    runRoot: loaded.packageRunRoot,
+    mode: rendered.mode,
+    inputPath,
+    outputPath,
+    htmlSha256: sha256Bytes(rendered.html),
+    fidelity: rendered.report,
+  };
+}
+
+async function commandValidateWechat(parsed: ParsedArguments): Promise<Record<string, unknown>> {
+  rejectUnknownOptions(parsed, ["run", "html", "repo"]);
+  const repoRoot = await repoRootFor(parsed);
+  const loaded = await loadPackage(repoRoot, stringOption(parsed, "run", true)!);
+  const htmlPath = resolveLocalInput(stringOption(parsed, "html", true)!);
+  const [body, html] = await Promise.all([
+    readArticlePackageBody(loaded.article, loaded.packageRoot),
+    readFile(htmlPath, "utf8"),
+  ]);
+  const inspection = inspectWechatHtml(html, "candidate");
+  const fidelity = assertWechatCodeFidelity(body, html);
+  return {
+    contractVersion: 1,
+    command: "validate-wechat",
+    runRoot: loaded.packageRunRoot,
+    htmlPath,
+    htmlSha256: sha256Bytes(html),
+    images: inspection.images.length,
+    leafSpans: inspection.leafSpanCount,
+    fidelity,
+  };
 }
 
 async function commandFreezeWechat(parsed: ParsedArguments): Promise<Record<string, unknown>> {
@@ -914,6 +991,10 @@ export async function executeCli(argv: string[]): Promise<Record<string, unknown
       return commandPackage(parsed);
     case "render-blog":
       return commandRenderBlog(parsed);
+    case "render-wechat-code":
+      return commandRenderWechatCode(parsed);
+    case "validate-wechat":
+      return commandValidateWechat(parsed);
     case "freeze-wechat":
       return commandFreezeWechat(parsed);
     case "prepare":

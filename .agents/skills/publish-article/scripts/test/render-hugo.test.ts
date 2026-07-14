@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import sharp from "sharp";
 import type { ArticlePackage } from "../src/types";
 import { renderHugoBundle, rewriteAssetUris } from "../src/render-hugo";
-import { diffDirectories, readExpectedHugoVersion, validateHugoCandidate } from "../src/hugo-validator";
+import {
+  diffDirectories,
+  readExpectedHugoVersion,
+  validateBlogStyleContract,
+  validateHugoCandidate,
+} from "../src/hugo-validator";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -125,18 +130,26 @@ describe("renderHugoBundle", () => {
     roots.push(root);
     const repoRoot = path.join(root, "repo");
     await mkdir(path.join(repoRoot, "layouts", "_default"), { recursive: true });
+    await mkdir(path.join(repoRoot, "static", "assets", "css"), { recursive: true });
     await writeFile(
       path.join(repoRoot, "vercel.json"),
       `${JSON.stringify({ build: { env: { HUGO_VERSION: "0.163.1" } } }, null, 2)}\n`,
     );
-    await writeFile(path.join(repoRoot, "hugo.toml"), 'baseURL = "https://example.invalid/"\n');
+    await writeFile(
+      path.join(repoRoot, "hugo.toml"),
+      'baseURL = "https://example.invalid/"\n[markup.highlight]\nnoClasses = false\n',
+    );
     await writeFile(
       path.join(repoRoot, "layouts", "_default", "single.html"),
-      "<!doctype html><html><body><h1>{{ .Title }}</h1>{{ with .Resources.GetMatch \"assets/*\" }}{{ $image := .Resize \"1x1\" }}<img src=\"{{ $image.RelPermalink }}\">{{ end }}{{ .Content }}</body></html>\n",
+      "<!doctype html><html><head><link href=\"/assets/css/stylesheet.css\" rel=\"stylesheet\"></head><body><h1>{{ .Title }}</h1>{{ with .Resources.GetMatch \"assets/*\" }}{{ $image := .Resize \"1x1\" }}<img src=\"{{ $image.RelPermalink }}\">{{ end }}<div class=\"post-content md-content\">{{ .Content }}</div></body></html>\n",
+    );
+    await writeFile(
+      path.join(repoRoot, "static", "assets", "css", "stylesheet.css"),
+      ".md-content .highlight{display:block}.md-content pre code{color:#fff}.chroma{background:#111}\n",
     );
     const packageRoot = path.join(root, "package");
     await mkdir(path.join(packageRoot, "assets"), { recursive: true });
-    await writeFile(path.join(packageRoot, "body.md"), "# 正文\n");
+    await writeFile(path.join(packageRoot, "body.md"), "# 正文\n\n```ts\nconst answer = 42;\n```\n");
     await sharp({ create: { width: 2, height: 2, channels: 3, background: "#059669" } })
       .png()
       .toFile(path.join(packageRoot, "assets", "cover.png"));
@@ -147,8 +160,45 @@ describe("renderHugoBundle", () => {
     const validation = await validateHugoCandidate(repoRoot, rendered.contentRoot, "sample-post", "articles");
     expect(validation.ok).toBe(true);
     expect(validation.expectedVersion).toBe("0.163.1");
+    expect(validation.styleContract).toMatchObject({
+      postContentUsesMarkdownStyles: true,
+      codeBlockCount: 1,
+      codeBlockStylesPresent: true,
+      stylesheetHref: "/assets/css/stylesheet.css",
+    });
     expect(await stat(path.join(repoRoot, ".hugo_build.lock")).catch(() => undefined)).toBeUndefined();
     expect(await stat(path.join(repoRoot, "resources")).catch(() => undefined)).toBeUndefined();
+  });
+
+  test("rejects a stale PaperMod layout override that drops md-content", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "publish-hugo-style-contract-"));
+    roots.push(root);
+    const articlePath = path.join(root, "posts", "sample-post", "index.html");
+    await mkdir(path.dirname(articlePath), { recursive: true });
+    await writeFile(articlePath, '<link href="/assets/css/stylesheet.css" rel="stylesheet"><div class="post-content"><p>unstyled</p></div>');
+    await expect(validateBlogStyleContract(root, articlePath)).rejects.toMatchObject({
+      data: { code: "E_HUGO_STYLE_CONTRACT", kind: "validation", outcome: "not_applied" },
+    });
+  });
+
+  test("rejects a built stylesheet that cannot target highlighted code", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "publish-hugo-code-contract-"));
+    roots.push(root);
+    const articlePath = path.join(root, "posts", "sample-post", "index.html");
+    const stylesheetPath = path.join(root, "assets", "css", "stylesheet.css");
+    await mkdir(path.dirname(articlePath), { recursive: true });
+    await mkdir(path.dirname(stylesheetPath), { recursive: true });
+    await writeFile(
+      articlePath,
+      '<link href="/assets/css/stylesheet.css" rel="stylesheet"><div class="post-content md-content"><div class="highlight"><pre class="chroma"><code>const answer = 42;</code></pre></div></div>',
+    );
+    await writeFile(stylesheetPath, ".post-content{font-size:1rem}\n");
+    await expect(validateBlogStyleContract(root, articlePath)).rejects.toMatchObject({
+      data: {
+        code: "E_HUGO_STYLE_CONTRACT",
+        details: { missingSelectors: ["markdown highlight container", "markdown code body", "Chroma syntax tokens"] },
+      },
+    });
   });
 
   test("keeps local absolute paths out of the review diff headers", async () => {

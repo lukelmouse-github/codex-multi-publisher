@@ -99,6 +99,8 @@ interface ArticlePackage {
 - HTML 渠道 renderer 生成带内联样式的正文片段和兼容图片。
 - 新渠道可以生成 JSON、纯文本、视频描述文件或其他格式。
 
+渲染成功必须同时满足平台结构契约和内容保真契约。PaperMod 候选需要在最终构建产物中证明 `post-content md-content` 容器与代码高亮 CSS 都可命中；微信公众号候选中的 fenced code 由程序从 Markdown AST 注入，并逐块比较语言、行数、空行、缩进和内容。平台 HTML 合规不等于内容正确，两类检查缺一不可。
+
 创作型渲染可能使用模型或外部工具，因此首次输出不应被视为确定性的。用户审阅后，系统冻结候选并计算 `renderDigest`。publish 阶段只能读取并复核这份候选，不能重新渲染。
 
 一个合格的冻结目录至少应提供：

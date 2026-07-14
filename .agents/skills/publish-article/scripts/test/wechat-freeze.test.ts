@@ -14,6 +14,7 @@ import {
 } from "../src/wechat-freeze";
 import { extractWechatPreviewPayload } from "../src/wechat-html";
 import { WECHAT_BODY_IMAGE_MAX_BYTES } from "../src/wechat-images";
+import { renderWechatCode, WECHAT_CODE_SLOT_PREFIX } from "../src/wechat-code";
 
 const fixturePath = fileURLToPath(new URL("./fixtures/wechat/original-green.html", import.meta.url));
 const cleanup: string[] = [];
@@ -180,6 +181,14 @@ describe("freezeWechatCandidate", () => {
     expect(verified.renderDigest).toBe(result.renderDigest);
     expect(result.provenanceDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(result.manifest.assets).toHaveLength(4);
+    expect(result.manifest.codeFidelity).toMatchObject({
+      schemaVersion: 1,
+      renderer: "wechat-code-inline/v1",
+      blockCount: 0,
+      sourceBodySha256: fixture.article.body.sha256,
+    });
+    expect(result.manifest.codeFidelity.sourceProjectionSha256)
+      .toBe(result.manifest.codeFidelity.renderedProjectionSha256);
     expect(result.manifest.assets.every((asset) => ["image/jpeg", "image/png"].includes(asset.mediaType))).toBe(true);
     expect(result.manifest.assets.find((asset) => asset.id === "cover")?.role).toBe("cover");
     expect(
@@ -270,5 +279,30 @@ describe("freezeWechatCandidate", () => {
     await expect(freezeWechatCandidate(existing.options)).rejects.toMatchObject({
       data: { code: "E_WECHAT_ALREADY_FROZEN" },
     });
+  });
+
+  test("refuses unmarked code before freezing and accepts source-rendered code slots", async () => {
+    const root = await tempRoot();
+    const fixture = await createFixture(root, await makeBuffers());
+    const body = ["# Code", "", "```json", "{", '  \"nested\": true', "}", "```", ""].join("\n");
+    fixture.article.body.sha256 = sha256Bytes(body);
+    await writeFile(path.join(fixture.options.packageRoot, "body.md"), body);
+    await writeFile(
+      fixture.options.candidateHtmlPath,
+      '<section><p><span leaf="">代码。</span></p><section style="margin:0;background:#1E293B;"><section style="display:flex;"><span style="font-family:Consolas,monospace;"><span leaf="">json</span></span></section><section><p style="font-family:Consolas,monospace;"><span leaf="">{\"nested\":true}</span></p></section></section></section>',
+    );
+    await expect(freezeWechatCandidate(fixture.options)).rejects.toMatchObject({
+      data: { code: "E_WECHAT_CODE_FIDELITY" },
+    });
+
+    const rendered = await renderWechatCode({
+      markdown: body,
+      candidateHtml: `<section><p><span leaf="">代码。</span></p><!--${WECHAT_CODE_SLOT_PREFIX}0--></section>`,
+    });
+    await writeFile(fixture.options.candidateHtmlPath, rendered.html);
+    const frozen = await freezeWechatCandidate(fixture.options);
+    expect(frozen.manifest.codeFidelity.blockCount).toBe(1);
+    expect(frozen.manifest.codeFidelity.sourceProjectionSha256)
+      .toBe(frozen.manifest.codeFidelity.renderedProjectionSha256);
   });
 });
